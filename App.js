@@ -112,7 +112,34 @@ function Header({ title, subtitle, back, action = 'notifications-outline' }) {
 }
 
 function HomeScreen({ openMira, goPlan }) {
-  const [done, setDone] = useState(['breakfast']);
+  const [expanded, setExpanded] = useState(null);
+  const [outcomes, setOutcomes] = useState({ breakfast: { type: 'full', portion: 100 } });
+  const [partialFor, setPartialFor] = useState(null);
+  const consumed = MEALS.reduce((total, meal) => {
+    const outcome = outcomes[meal.id];
+    const ratio = outcome ? outcome.portion / 100 : 0;
+    return {
+      kcal: total.kcal + Math.round(meal.kcal * ratio),
+      protein: total.protein + Math.round(meal.protein * ratio),
+      carbs: total.carbs + Math.round(meal.carbs * ratio),
+      fat: total.fat + Math.round(meal.fat * ratio),
+    };
+  }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+
+  const setOutcome = (meal, type, portion) => {
+    setOutcomes((current) => ({ ...current, [meal.id]: { type, portion } }));
+    setPartialFor(null);
+  };
+
+  const outcomeLabel = (meal) => {
+    const outcome = outcomes[meal.id];
+    if (!outcome) return meal.status;
+    if (outcome.type === 'full') return 'Completed';
+    if (outcome.type === 'partial') return `${outcome.portion}% eaten`;
+    if (outcome.type === 'skipped') return 'Skipped';
+    return 'Replaced';
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.screen} showsVerticalScrollIndicator={false}>
       <Header title="Good Morning, Tina 👋" subtitle="Let's make today amazing!" />
@@ -131,22 +158,36 @@ function HomeScreen({ openMira, goPlan }) {
 
       <Glass style={styles.proteinCallout}>
         <Text style={styles.flexEmoji}>💪</Text>
-        <Text style={styles.calloutText}>You’re <Text style={styles.bold}>18g</Text> away from hitting{`\n`}your protein goal</Text>
+        <Text style={styles.calloutText}>Logged so far: <Text style={styles.bold}>{consumed.protein}g protein</Text>{`\n`}{consumed.kcal} kcal · {consumed.carbs}g carbs · {consumed.fat}g fat</Text>
         <View style={styles.smallRing}><Ionicons name="nutrition" size={15} color={C.text} /></View>
       </Glass>
 
       <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Today’s Plan</Text><TouchableOpacity onPress={goPlan}><Text style={styles.link}>View Plan</Text></TouchableOpacity></View>
       {MEALS.map((meal) => {
-        const isDone = done.includes(meal.id);
+        const outcome = outcomes[meal.id];
+        const isDone = outcome?.type === 'full';
+        const isOpen = expanded === meal.id;
         return (
-          <TouchableOpacity key={meal.id} activeOpacity={0.85} onPress={() => setDone((v) => isDone ? v.filter((x) => x !== meal.id) : [...v, meal.id])}>
-            <Glass style={styles.compactMeal}>
+          <Glass key={meal.id} style={[styles.mealShell, isOpen && styles.mealShellOpen]}>
+            <TouchableOpacity style={styles.compactMeal} activeOpacity={0.85} onPress={() => setExpanded(isOpen ? null : meal.id)}>
               <AtlasPhoto index={meal.photo} size={52} />
               <View style={{ flex: 1 }}><Text style={styles.mealName}>{meal.type}</Text><Text style={styles.mealSub}>{meal.name}</Text></View>
-              <View style={[styles.statusBadge, meal.status === 'Adaptive' && styles.purpleBadge, meal.status === 'Planned' && styles.blueBadge]}><Text style={[styles.statusText, meal.status === 'Adaptive' && { color: '#DC8BFF' }, meal.status === 'Planned' && { color: '#75A9FF' }]}>{isDone ? 'Completed' : meal.status}</Text></View>
-              <Ionicons name={isDone ? 'checkmark-circle' : meal.status === 'Adaptive' ? 'sparkles' : 'time-outline'} size={23} color={isDone ? C.green : meal.status === 'Adaptive' ? C.purple : C.text} />
-            </Glass>
-          </TouchableOpacity>
+              <View style={[styles.statusBadge, meal.status === 'Adaptive' && styles.purpleBadge, meal.status === 'Planned' && styles.blueBadge, outcome?.type === 'skipped' && styles.skippedBadge]}><Text style={[styles.statusText, meal.status === 'Adaptive' && { color: '#DC8BFF' }, meal.status === 'Planned' && { color: '#75A9FF' }, outcome?.type === 'skipped' && { color: C.red }]}>{outcomeLabel(meal)}</Text></View>
+              <Ionicons name={isOpen ? 'chevron-up' : isDone ? 'checkmark-circle' : 'chevron-down'} size={21} color={isDone ? C.green : C.text} />
+            </TouchableOpacity>
+            {isOpen && <View style={styles.inlineMeal}>
+              <View style={styles.inlineNutrition}><Text style={styles.inlineNutritionText}>{meal.kcal} kcal</Text><Text style={styles.inlineNutritionText}>{meal.protein}g protein</Text><Text style={styles.inlineNutritionText}>{meal.carbs}g carbs</Text><Text style={styles.inlineNutritionText}>{meal.fat}g fat</Text></View>
+              <TouchableOpacity style={styles.recipeLink}><Ionicons name="book-outline" size={17} color={C.green} /><Text style={styles.recipeLinkText}>View recipe & portions</Text><Ionicons name="arrow-forward" size={15} color={C.green} /></TouchableOpacity>
+              <Text style={styles.outcomeTitle}>What happened?</Text>
+              <View style={styles.outcomeGrid}>
+                <TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome(meal, 'full', 100)}><Ionicons name="checkmark-circle-outline" size={18} color={C.green} /><Text style={styles.outcomeButtonText}>Ate all</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.outcomeButton} onPress={() => setPartialFor(partialFor === meal.id ? null : meal.id)}><Ionicons name="pie-chart-outline" size={18} color={C.amber} /><Text style={styles.outcomeButtonText}>Ate part</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome(meal, 'skipped', 0)}><Ionicons name="close-circle-outline" size={18} color={C.red} /><Text style={styles.outcomeButtonText}>Skipped</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.outcomeButton} onPress={() => { setOutcome(meal, 'replaced', 100); openMira(); }}><Ionicons name="swap-horizontal" size={18} color={C.purple} /><Text style={styles.outcomeButtonText}>Ate other</Text></TouchableOpacity>
+              </View>
+              {partialFor === meal.id && <View style={styles.portionPicker}><Text style={styles.portionPrompt}>How much did you eat?</Text><View style={styles.portionRow}>{[25, 50, 75].map((portion) => <TouchableOpacity key={portion} style={styles.portionButton} onPress={() => setOutcome(meal, 'partial', portion)}><Text style={styles.portionButtonText}>{portion}%</Text></TouchableOpacity>)}</View></View>}
+            </View>}
+          </Glass>
         );
       })}
 
@@ -236,6 +277,7 @@ const styles = StyleSheet.create({
   glass: { backgroundColor: C.panel, borderWidth: 1, borderColor: C.border, borderRadius: 18 }, cardTitle: { color: C.text, fontSize: 15, fontWeight: '700' }, bodyText: { color: '#AAB6BF', fontSize: 13, lineHeight: 20, marginTop: 8 }, scoreCard: { padding: 20, backgroundColor: '#0B1A28', shadowColor: C.green, shadowOpacity: 0.1, shadowRadius: 20 }, scoreBody: { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 18 }, ring: { borderWidth: 10, alignItems: 'center', justifyContent: 'center', shadowColor: C.green, shadowOpacity: 0.35, shadowRadius: 12 }, ringInner: { backgroundColor: '#07131E', alignItems: 'center', justifyContent: 'center' }, ringValue: { color: C.text, fontWeight: '800', letterSpacing: -1 }, ringLabel: { color: C.muted, fontSize: 10 }, excellent: { color: C.text, fontSize: 16, fontWeight: '700' }, darkButton: { marginTop: 12, height: 38, borderRadius: 10, paddingHorizontal: 15, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#102430', borderWidth: 1, borderColor: '#254150' }, darkButtonText: { color: C.text, fontSize: 12, fontWeight: '600' },
   proteinCallout: { minHeight: 70, marginTop: 10, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', backgroundColor: '#0B202A' }, flexEmoji: { fontSize: 30, marginRight: 14 }, calloutText: { flex: 1, color: '#B8C4CC', fontSize: 13, lineHeight: 20 }, bold: { color: C.text, fontWeight: '800' }, smallRing: { width: 31, height: 31, borderRadius: 16, borderWidth: 3, borderColor: C.green, alignItems: 'center', justifyContent: 'center' },
   sectionHeadingRow: { marginTop: 22, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sectionTitle: { color: C.text, fontSize: 19, fontWeight: '700' }, link: { color: '#6CA3FF', fontSize: 13 }, compactMeal: { height: 64, marginBottom: 8, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }, photoCrop: { overflow: 'hidden', backgroundColor: '#142430' }, mealName: { color: C.text, fontSize: 13, fontWeight: '700' }, mealSub: { color: '#B2BEC5', fontSize: 12, marginTop: 4 }, statusBadge: { backgroundColor: '#123622', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 7 }, purpleBadge: { backgroundColor: '#2D183C' }, blueBadge: { backgroundColor: '#122746' }, statusText: { color: C.green, fontSize: 10 },
+  mealShell: { marginBottom: 8, overflow: 'hidden' }, mealShellOpen: { borderColor: '#2B5B47', backgroundColor: '#0C1E29' }, compactMeal: { minHeight: 64, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }, skippedBadge: { backgroundColor: '#361A20' }, inlineMeal: { borderTopWidth: 1, borderTopColor: C.border, padding: 14 }, inlineNutrition: { flexDirection: 'row', justifyContent: 'space-between', paddingBottom: 13 }, inlineNutritionText: { color: C.muted, fontSize: 10 }, recipeLink: { minHeight: 42, borderRadius: 11, paddingHorizontal: 13, backgroundColor: '#102B23', flexDirection: 'row', alignItems: 'center', gap: 9 }, recipeLinkText: { color: C.green, fontSize: 12, fontWeight: '700', flex: 1 }, outcomeTitle: { color: C.text, fontSize: 12, fontWeight: '700', marginTop: 16, marginBottom: 9 }, outcomeGrid: { flexDirection: 'row', gap: 7 }, outcomeButton: { flex: 1, minHeight: 54, borderRadius: 11, borderWidth: 1, borderColor: C.border, backgroundColor: '#0A1822', alignItems: 'center', justifyContent: 'center', gap: 5 }, outcomeButtonText: { color: '#C5CFD5', fontSize: 9, fontWeight: '600' }, portionPicker: { marginTop: 12, backgroundColor: '#091721', borderRadius: 12, padding: 12 }, portionPrompt: { color: C.text, fontSize: 11, fontWeight: '600', marginBottom: 9 }, portionRow: { flexDirection: 'row', gap: 8 }, portionButton: { flex: 1, height: 36, borderRadius: 9, backgroundColor: '#173C2A', alignItems: 'center', justifyContent: 'center' }, portionButtonText: { color: C.green, fontWeight: '800', fontSize: 12 },
   miraHome: { height: 190, alignItems: 'center', justifyContent: 'center', marginTop: 5, overflow: 'hidden' }, wave: { position: 'absolute', width: '100%', height: 1, top: 78, backgroundColor: C.cyan, shadowColor: C.cyan, shadowOpacity: 0.8, shadowRadius: 8 }, orbGlow: { backgroundColor: '#2AD8F20B', alignItems: 'center', justifyContent: 'center' }, orb: { overflow: 'hidden', backgroundColor: '#21D8E9', borderWidth: 1, borderColor: '#CBFFFF', shadowColor: C.cyan, shadowOpacity: 0.9, shadowRadius: 18 }, orbPurple: { position: 'absolute', right: -5, bottom: -6, backgroundColor: '#BB40F2' }, orbBlue: { position: 'absolute', left: -2, bottom: 4, backgroundColor: '#3AE6F2' }, orbShine: { position: 'absolute', left: '22%', top: '9%', backgroundColor: '#E8FFFF', transform: [{ rotate: '32deg' }] }, askMira: { color: C.text, fontSize: 20, fontWeight: '600', marginTop: 2 }, miraCaption: { color: C.muted, marginTop: 5, fontSize: 13 },
   days: { flexDirection: 'row', gap: 7, marginTop: 2, marginBottom: 22 }, day: { flex: 1, minHeight: 56, borderRadius: 11, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border }, dayActive: { backgroundColor: '#104929', borderColor: C.green, shadowColor: C.green, shadowOpacity: 0.25, shadowRadius: 7 }, dayText: { color: '#B2BDC5', fontSize: 12, textAlign: 'center', lineHeight: 20 }, dayTextActive: { color: C.text, fontWeight: '800' }, macros: { marginBottom: 22 }, macroRow: { marginBottom: 16 }, rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, smallWhite: { color: C.text, fontSize: 12 }, progressTrack: { height: 4, backgroundColor: '#1A2934', borderRadius: 3, overflow: 'hidden', marginTop: 8 }, progressFill: { height: 4, backgroundColor: C.green, borderRadius: 3 }, planMeal: { padding: 8, flexDirection: 'row', gap: 12, marginTop: 10 }, mealType: { color: C.text, fontSize: 11 }, mealTime: { color: C.muted, fontSize: 11 }, planMealName: { color: C.text, fontSize: 16, fontWeight: '600', marginTop: 13 }, nutritionLine: { color: C.muted, fontSize: 11, marginTop: 8 }, generate: { minHeight: 64, marginTop: 18, backgroundColor: '#17182D', borderWidth: 1, borderColor: '#34304E', borderRadius: 28, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center', gap: 18 }, generateTitle: { color: C.text, fontWeight: '700', fontSize: 14 }, generateSub: { color: C.muted, fontSize: 11, marginTop: 3 },
   pantryHero: { minHeight: 178, marginTop: 8, padding: 20, flexDirection: 'row', backgroundColor: '#0A2721', overflow: 'hidden' }, covered: { color: C.text, fontSize: 27, fontWeight: '700', marginTop: 4 }, groceryBag: { fontSize: 70, alignSelf: 'center', marginRight: 8 }, filters: { marginVertical: 14, flexGrow: 0 }, filter: { paddingHorizontal: 14, height: 31, borderRadius: 16, justifyContent: 'center', backgroundColor: C.panel, marginRight: 7 }, filterActive: { backgroundColor: '#2DB65B' }, filterText: { color: '#C3CCD2', fontSize: 11 }, filterTextActive: { color: C.text, fontWeight: '700' }, stockCard: { padding: 10, marginBottom: 10 }, stockTitle: { color: C.text, fontSize: 14, fontWeight: '600', margin: 3, marginBottom: 8 }, badgeCount: { color: '#C5B3F2' }, stockRow: { minHeight: 62, borderTopWidth: 1, borderTopColor: C.border, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }, stockEmoji: { width: 54, height: 46, borderRadius: 13, backgroundColor: '#152531', alignItems: 'center', justifyContent: 'center', marginRight: 10 }, stockName: { color: C.text, fontSize: 14, fontWeight: '600' }, stockNote: { color: C.muted, fontSize: 11, marginTop: 3 }, qty: { color: '#C5CED4', fontSize: 12 }, buy: { backgroundColor: '#258B45', borderRadius: 9, paddingHorizontal: 15, paddingVertical: 10 }, buyText: { color: C.text, fontSize: 11, fontWeight: '700' }, orderCard: { padding: 12, marginBottom: 4 }, orderButtons: { flexDirection: 'row', gap: 8, marginTop: 9 }, brandButton: { flex: 1, borderRadius: 7, paddingVertical: 9, alignItems: 'center' }, brandDark: { color: '#173016', fontSize: 11, fontWeight: '900' }, brandLight: { color: C.text, fontSize: 10, fontWeight: '900' },
